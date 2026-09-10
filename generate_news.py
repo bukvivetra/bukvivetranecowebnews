@@ -45,15 +45,19 @@ def get_rss_news():
     return news
 
 def rewrite_with_ai(title, description):
+    
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
-    prompt = f"Ты — опытный редактор новостного издания. Перепиши следующую новость своими словами, сохранив все ключевые факты, но изменив структуру предложений и лексику. Сделай текст уникальным и интересным для читателя. Верни только готовый текст. Заголовок: {title}. Текст: {description}"
     data = {
-        "model": "openai/gpt-oss-20b",
-        "messages": [{"role": "user", "content": prompt}]
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": "Ты — опытный редактор новостного издания. Ты переписываешь новости своими словами на русском языке: сохраняешь все ключевые факты, но меняешь структуру предложений и лексику. Отвечай ТОЛЬКО готовым текстом новости, без приветствий, пояснений и вопросов."},
+            {"role": "user", "content": f"Перепиши эту новость:\n\nЗаголовок: {title}\n\nТекст: {description}"}
+        ],
+        "temperature": 0.7
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
