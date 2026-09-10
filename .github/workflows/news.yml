@@ -43,6 +43,6 @@ jobs:
 
       - name: Commit and push changes
         run: |
-          git add index.html news.json
+          git add -A
           git commit -m "Auto update news" || exit 0
           git push
