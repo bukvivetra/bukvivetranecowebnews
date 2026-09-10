@@ -13,6 +13,7 @@ OUTPUT_FILE = "index.html"
 NEWS_JSON = "news.json"
 NEWS_DIR = "news"
 SITEMAP_FILE = "sitemap.xml"
+NEW_URLS_FILE = "new_urls.txt"
 BASE_URL = "https://bukvivetra.github.io/bukvivetranecowebnews/"
 MAX_NEWS_PER_RUN = 3
 INDEX_SHOW_LIMIT = 50
@@ -214,12 +215,10 @@ def main():
     existing_news = load_existing_news()
     existing_links = {item['link'] for item in existing_news}
 
-    # Присваиваем slug старым новостям
     for n in existing_news:
         if not n.get('slug'):
             n['slug'] = make_slug(n['title'])
 
-    # Перегенерируем HTML всех существующих страниц
     print("Обновляем страницы существующих новостей...")
     for n in existing_news:
         path = os.path.join(NEWS_DIR, n['slug'] + '.html')
@@ -266,13 +265,10 @@ def main():
     with open(SITEMAP_FILE, "w", encoding="utf-8") as f:
         f.write(render_sitemap(existing_news))
 
-            new_urls = [f"{BASE_URL}news/{n['slug']}.html" for n in existing_news[:new_count]]
-    with open("new_urls.txt", "w", encoding="utf-8") as f:
+    print("Формируем список новых URL для IndexNow...")
+    new_urls = [f"{BASE_URL}news/{n['slug']}.html" for n in existing_news[:new_count]]
+    with open(NEW_URLS_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(new_urls))
-
-
-
-        
 
     print(f"Готово! Добавлено {new_count} новостей. Всего: {len(existing_news)}")
 
