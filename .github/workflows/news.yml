@@ -1,5 +1,3 @@
-permissions:
-  contents: write
 name: Auto News Update
 
 on:
@@ -7,31 +5,44 @@ on:
     - cron: '0 */2 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: news-update
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        
+        with:
+          fetch-depth: 0
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.10'
-          
+
       - name: Install dependencies
         run: pip install requests
-        
+
+      - name: Pull latest changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git pull --rebase origin main
+
       - name: Run news generator
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python generate_news.py
-        
+
       - name: Commit and push changes
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
           git add index.html news.json
           git commit -m "Auto update news" || exit 0
           git push
