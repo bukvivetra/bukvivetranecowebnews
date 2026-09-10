@@ -266,6 +266,14 @@ def main():
     with open(SITEMAP_FILE, "w", encoding="utf-8") as f:
         f.write(render_sitemap(existing_news))
 
+            new_urls = [f"{BASE_URL}news/{n['slug']}.html" for n in existing_news[:new_count]]
+    with open("new_urls.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(new_urls))
+
+
+
+        
+
     print(f"Готово! Добавлено {new_count} новостей. Всего: {len(existing_news)}")
 
 if __name__ == "__main__":
