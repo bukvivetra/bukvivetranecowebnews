@@ -11,9 +11,22 @@ OUTPUT_FILE = "index.html"
 NEWS_JSON = "news.json"
 MAX_NEWS_PER_RUN = 3
 MAX_TOTAL_NEWS = 50
-MODEL_NAME = "openai/gpt-oss-120b"  # Актуальная бесплатная модель Groq
+MODEL_NAME = "openai/gpt-oss-120b"
 
-# === ФУНКЦИИ ===
+# Фразы-маркеры "мусорного" ответа ИИ
+BAD_PATTERNS = [
+    "пришлите",
+    "пожалуйста, пришлите",
+    "укажите текст",
+    "не могу переписать",
+    "нужен текст",
+    "предоставьте",
+    "я не могу",
+    "извините",
+    "прошу прощения",
+    "не имею доступа"
+]
+
 def load_existing_news():
     if os.path.exists(NEWS_JSON):
         with open(NEWS_JSON, "r", encoding="utf-8") as f:
@@ -46,13 +59,20 @@ def get_rss_news():
         })
     return news
 
+def is_bad_response(text):
+    """Проверяет, является ли ответ ИИ мусорным."""
+    if not text or len(text) < 50:
+        return True
+    text_lower = text.lower()
+    return any(pattern in text_lower for pattern in BAD_PATTERNS)
+
 def rewrite_with_ai(title, description):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     data = {
         "model": MODEL_NAME,
         "messages": [
@@ -67,18 +87,22 @@ def rewrite_with_ai(title, description):
         ],
         "temperature": 0.7
     }
-    
+
     try:
         response = requests.post(url, headers=headers, json=data, timeout=60)
         if response.status_code == 200:
             result = response.json()
-            return result['choices'][0]['message']['content'].strip()
+            text = result['choices'][0]['message']['content'].strip()
+            if is_bad_response(text):
+                print(f"  → ИИ вернул мусор, пропускаем новость")
+                return None
+            return text
         else:
-            print(f"Ошибка ИИ: {response.status_code} - {response.text}")
-            return description
+            print(f"  → Ошибка ИИ: {response.status_code} - {response.text}")
+            return None
     except Exception as e:
-        print(f"Ошибка при запросе к ИИ: {e}")
-        return description
+        print(f"  → Ошибка при запросе к ИИ: {e}")
+        return None
 
 def generate_html(news_list):
     html = """<!DOCTYPE html>
@@ -139,6 +163,8 @@ def main():
             break
         print(f"Обрабатываем: {item['title'][:50]}...")
         rewritten = rewrite_with_ai(item['title'], item['description'])
+        if rewritten is None:
+            continue
         existing_news.insert(0, {
             "title": item['title'],
             "rewritten": rewritten,
