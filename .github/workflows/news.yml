@@ -46,3 +46,14 @@ jobs:
           git add -A
           git commit -m "Auto update news" || exit 0
           git push
+
+      - name: Ping IndexNow
+        run: |
+          if [ -f new_urls.txt ]; then
+            sleep 60
+            while IFS= read -r url; do
+              [ -z "$url" ] && continue
+              curl -s "https://yandex.com/indexnow?url=${url}&key=a4f3b9c2e8d7f1a6b5c3e9d2f8a7b4c1" > /dev/null || true
+              echo "Pinged: $url"
+            done < new_urls.txt
+          fi
