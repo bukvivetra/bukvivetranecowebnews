@@ -13,25 +13,15 @@ NEWS_JSON = "news.json"
 MAX_NEWS_PER_RUN = 3
 MAX_TOTAL_NEWS = 50
 MODEL_NAME = "openai/gpt-oss-120b"
+MIN_TEXT_LENGTH = 120
+MAX_TITLE_OVERLAP = 0.7
 
-# Расширенный список маркеров "мусорного" ответа
 BAD_PATTERNS = [
-    "пришлите",
-    "предоставьте",
-    "предоставлен",
-    "укажите текст",
-    "не могу переписать",
-    "переписать её невозможно",
-    "переписать невозможно",
-    "нужен текст",
-    "я не могу",
-    "извините",
-    "прошу прощения",
-    "не имею доступа",
-    "текст не предоставлен",
-    "текст новости не",
-    "невозможно",
-    "не предоставлен"
+    "пришлите", "предоставьте", "предоставлен", "укажите текст",
+    "не могу переписать", "переписать её невозможно", "переписать невозможно",
+    "нужен текст", "я не могу", "извините", "прошу прощения",
+    "не имею доступа", "текст не предоставлен", "текст новости не",
+    "невозможно", "не предоставлен"
 ]
 
 def load_existing_news():
@@ -67,19 +57,30 @@ def get_rss_news():
     return news
 
 def clean_text(text):
-    """Убирает markdown-обёртки, которые ИИ добавляет от себя."""
     text = re.sub(r"\*\*Заголовок:\*\*\s*", "", text)
     text = re.sub(r"\*\*Текст:\*\*\s*", "", text)
     text = re.sub(r"\*\*", "", text)
-    text = text.strip()
-    return text
+    return text.strip()
 
-def is_bad_response(text):
-    """Проверяет, является ли ответ ИИ мусорным."""
-    if not text or len(text) < 50:
+def title_overlap(title, text):
+    """Считает, какая доля слов заголовка присутствует в тексте."""
+    def normalize(s):
+        return re.findall(r"[а-яёa-z0-9]+", s.lower())
+    title_words = set(normalize(title))
+    text_words = set(normalize(text))
+    if not title_words:
+        return 0
+    return len(title_words & text_words) / len(title_words)
+
+def is_bad_response(text, title):
+    if not text or len(text) < MIN_TEXT_LENGTH:
         return True
     text_lower = text.lower()
-    return any(pattern in text_lower for pattern in BAD_PATTERNS)
+    if any(pattern in text_lower for pattern in BAD_PATTERNS):
+        return True
+    if title_overlap(title, text) > MAX_TITLE_OVERLAP:
+        return True
+    return False
 
 def rewrite_with_ai(title, description):
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -87,13 +88,12 @@ def rewrite_with_ai(title, description):
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
-
     data = {
         "model": MODEL_NAME,
         "messages": [
             {
                 "role": "system",
-                "content": "Ты — опытный редактор новостного издания. Ты переписываешь новости своими словами на русском языке: сохраняешь все ключевые факты, но меняешь структуру предложений и лексику. Отвечай ТОЛЬКО готовым текстом новости — без приветствий, пояснений, вопросов, без пометок 'Заголовок:' и 'Текст:', без markdown."
+                "content": "Ты — опытный редактор новостного издания. Ты переписываешь новости своими словами на русском языке: сохраняешь все ключевые факты, но меняешь структуру предложений и лексику. Пиши развёрнуто, 3-5 предложений. Отвечай ТОЛЬКО готовым текстом новости — без приветствий, пояснений, вопросов, без пометок 'Заголовок:' и 'Текст:', без markdown."
             },
             {
                 "role": "user",
@@ -102,15 +102,13 @@ def rewrite_with_ai(title, description):
         ],
         "temperature": 0.7
     }
-
     try:
         response = requests.post(url, headers=headers, json=data, timeout=60)
         if response.status_code == 200:
-            result = response.json()
-            text = result['choices'][0]['message']['content'].strip()
+            text = response.json()['choices'][0]['message']['content'].strip()
             text = clean_text(text)
-            if is_bad_response(text):
-                print(f"  → ИИ вернул мусор, пропускаем новость")
+            if is_bad_response(text, title):
+                print(f"  → ИИ вернул некачественный текст, пропускаем новость")
                 return None
             return text
         else:
