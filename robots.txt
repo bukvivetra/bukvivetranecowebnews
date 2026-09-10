@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bukvivetra.github.io/bukvivetranecowebnews/sitemap.xml
