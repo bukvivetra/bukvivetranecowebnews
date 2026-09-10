@@ -2,16 +2,18 @@ import os
 import json
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 
-# Настройки
+# === НАСТРОЙКИ ===
 RSS_URL = "https://lenta.ru/rss/news"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 OUTPUT_FILE = "index.html"
 NEWS_JSON = "news.json"
-MAX_NEWS_PER_RUN = 3  # Сколько новостей обрабатывать за один запуск (чтобы не перегружать ИИ)
-MAX_TOTAL_NEWS = 50   # Максимум новостей на сайте
+MAX_NEWS_PER_RUN = 3
+MAX_TOTAL_NEWS = 50
+MODEL_NAME = "openai/gpt-oss-120b"  # Актуальная бесплатная модель Groq
 
+# === ФУНКЦИИ ===
 def load_existing_news():
     if os.path.exists(NEWS_JSON):
         with open(NEWS_JSON, "r", encoding="utf-8") as f:
@@ -26,7 +28,7 @@ def get_rss_news():
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    response = requests.get(RSS_URL, headers=headers)
+    response = requests.get(RSS_URL, headers=headers, timeout=30)
     response.raise_for_status()
     root = ET.fromstring(response.content)
     items = root.findall(".//item")
@@ -45,24 +47,32 @@ def get_rss_news():
     return news
 
 def rewrite_with_ai(title, description):
-    
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
+    
     data = {
-        "model": "llama-3.3-70b-versatile",
+        "model": MODEL_NAME,
         "messages": [
-            {"role": "system", "content": "Ты — опытный редактор новостного издания. Ты переписываешь новости своими словами на русском языке: сохраняешь все ключевые факты, но меняешь структуру предложений и лексику. Отвечай ТОЛЬКО готовым текстом новости, без приветствий, пояснений и вопросов."},
-            {"role": "user", "content": f"Перепиши эту новость:\n\nЗаголовок: {title}\n\nТекст: {description}"}
+            {
+                "role": "system",
+                "content": "Ты — опытный редактор новостного издания. Ты переписываешь новости своими словами на русском языке: сохраняешь все ключевые факты, но меняешь структуру предложений и лексику. Отвечай ТОЛЬКО готовым текстом новости, без приветствий, пояснений и вопросов."
+            },
+            {
+                "role": "user",
+                "content": f"Перепиши эту новость:\n\nЗаголовок: {title}\n\nТекст: {description}"
+            }
         ],
         "temperature": 0.7
     }
+    
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=60)
         if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content']
+            result = response.json()
+            return result['choices'][0]['message']['content'].strip()
         else:
             print(f"Ошибка ИИ: {response.status_code} - {response.text}")
             return description
@@ -76,25 +86,31 @@ def generate_html(news_list):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Автоматические новости</title>
+    <meta name="description" content="Актуальные новости России и мира. Автоматическое обновление каждый час.">
+    <title>Новости дня</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f4; }
-        .news-item { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; text-align: center; }
-        h2 { color: #0066cc; margin-top: 0; }
-        .source { font-size: 0.8em; color: #888; margin-top: 10px; }
-        .date { font-size: 0.8em; color: #aaa; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f0f2f5; color: #333; }
+        header { background: #1a1a2e; color: white; padding: 20px; border-radius: 12px; margin-bottom: 24px; text-align: center; }
+        header h1 { margin: 0; font-size: 28px; }
+        .news-item { background: white; padding: 24px; margin-bottom: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: box-shadow 0.2s; }
+        .news-item:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+        .news-item h2 { color: #1a1a2e; margin-top: 0; font-size: 20px; line-height: 1.4; }
+        .news-item p { line-height: 1.7; color: #444; }
+        .source { font-size: 13px; color: #888; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+        .source a { color: #0066cc; text-decoration: none; }
+        .date { font-size: 12px; color: #aaa; margin-top: 4px; }
     </style>
 </head>
 <body>
-    <h1>Новости дня</h1>
+    <header><h1>Новости дня</h1></header>
 """
     for news in news_list:
         html += f"""
     <div class="news-item">
         <h2>{news['title']}</h2>
         <p>{news['rewritten']}</p>
-        <div class="source">Источник: <a href="{news['link']}" target="_blank">Lenta.ru</a></div>
+        <div class="source">Источник: <a href="{news['link']}" target="_blank" rel="noopener">Lenta.ru</a></div>
         <div class="date">{news.get('date', '')}</div>
     </div>
 """
@@ -127,11 +143,10 @@ def main():
             "title": item['title'],
             "rewritten": rewritten,
             "link": item['link'],
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         })
         new_count += 1
 
-    # Ограничиваем общее количество
     existing_news = existing_news[:MAX_TOTAL_NEWS]
 
     print("Сохраняем news.json...")
